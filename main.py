@@ -2,6 +2,7 @@ import sys
 import time
 
 from PyQt6.QtCore import Qt, QObject, QThread, pyqtSignal
+from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QApplication, QMainWindow, QSplitter
 
 from core import DEFAULT_MODEL, MAX_TOKENS
@@ -16,7 +17,6 @@ class ChatManager(QObject):
 
     # passing on signals from chat threads
     waiting = pyqtSignal()
-    timeout = pyqtSignal()
     wait_finished = pyqtSignal()
     streaming = pyqtSignal(str)
     streaming_finished = pyqtSignal(str)
@@ -70,7 +70,6 @@ class ChatManager(QObject):
     def create_completion(self, prompt: str):
         self._chat_thread = ChatThread(chat_manager=self, prompt=prompt)
         self._chat_thread.waiting.connect(self.waiting.emit)
-        self._chat_thread.timeout.connect(self.timeout.emit)
         self._chat_thread.wait_finished.connect(self.wait_finished.emit)
         self._chat_thread.streaming.connect(self.streaming)
         self._chat_thread.streaming_finished.connect(self._on_streaming_finish)
@@ -103,7 +102,6 @@ class ChatManager(QObject):
 class ChatThread(QThread):
     # passing on signals from wait threads
     waiting = pyqtSignal()
-    timeout = pyqtSignal()
 
     # emitted when waiting ends for whatever reason
     wait_finished = pyqtSignal()
@@ -121,7 +119,6 @@ class ChatThread(QThread):
         self._is_waiting = True
         self._wait_thread = ChatWaitThread()
         self._wait_thread.waiting.connect(self.waiting.emit)
-        self._wait_thread.timeout.connect(self.timeout.emit)
 
     def run(self):
         chat = self._cm.active_chat
@@ -156,27 +153,19 @@ class ChatThread(QThread):
 class ChatWaitThread(QThread):
     waiting = pyqtSignal()
     stopped = pyqtSignal()
-    timeout = pyqtSignal()
 
-    def __init__(self, parent=None, timeout=60, interval=0.5):
+    def __init__(self, parent=None, interval=0.5):
         super().__init__(parent)
-        self._timeout = timeout
         self._interval = interval
         self._stop = False
 
     def run(self):
-        time_waited = 0
-
         while True:
             if self._stop:
                 self.stopped.emit()
                 return
-            if time_waited > self._timeout:
-                self.timeout.emit()
-                return
             self.waiting.emit()
             time.sleep(self._interval)
-            time_waited += self._interval
 
     def stop(self):
         self._stop = True
@@ -203,7 +192,6 @@ class MainWindow(QMainWindow):
         self.input_box.prompt_sent.connect(self.chat_manager.create_completion)
 
         self.chat_manager.waiting.connect(self.chat_room.white_waiting)
-        self.chat_manager.timeout.connect(lambda: print("timeout"))
 
         self.chat_manager.wait_finished.connect(self.input_box.clear)
         self.chat_manager.wait_finished.connect(self.chat_room.on_wait_finish)
@@ -214,7 +202,7 @@ class MainWindow(QMainWindow):
         self.chat_manager.streaming_finished.connect(self.input_box.enable)
         self.chat_manager.tokens_used.connect(self._show_tokens_used)
 
-        self.chat_manager.error.connect(print)  # print the exception
+        self.chat_manager.error.connect(self.chat_room.show_error)
         self.chat_manager.error.connect(self.input_box.enable)
 
         # Initialize appearance
@@ -222,6 +210,12 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("chitchat")
         self.setGeometry(400, 100, 480, 600)
         central.setSizes([350, 250])  # height ratio of the chat room to the input box
+
+        # for debugging
+        _show_html_action = QAction(self)
+        _show_html_action.triggered.connect(lambda: print(self.chat_room.toHtml()))
+        _show_html_action.setShortcut("Ctrl+u")
+        self.addAction(_show_html_action)
 
     def _show_tokens_used(self, tokens_used: str):
         self.input_box.show_tokens_used(tokens_used, self.chat_manager.max_tokens)
