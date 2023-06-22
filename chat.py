@@ -1,61 +1,8 @@
-import typing
-import json
 import datetime
-import functools
 import argparse
+import contextlib
 
-import openai
-import tiktoken
-
-
-DEFAULT_MODEL = "gpt-3.5-turbo"
-
-with open("chat_settings.json", encoding="utf-8") as _f:
-    chat_settings = json.load(_f)
-
-openai.api_key = chat_settings.get("key", "")
-openai.api_base = chat_settings.get("base", openai.api_base)
-MAX_TOKENS = chat_settings.get("max_tokens", 4097)
-
-del _f
-
-
-class _Request(typing.NamedTuple):
-    model: str = DEFAULT_MODEL
-    prompt: None | str = None
-    response: None | str = None
-    timestamp: None | str = None
-
-    # OpenAI doc:
-    # > What sampling temperature to use, between 0 and 2. Higher values
-    # > like 0.8 will make the output more random, while lower values
-    # > like 0.2 will make it more focused and deterministic.
-    temperature: None | float = None
-
-    # OpenAI doc:
-    # > An alternative to sampling with temperature, called nucleus sampling,
-    # > where the model considers the results of the tokens with `top_p`
-    # > probability mass. So 0.1 means only the tokens comprising the top
-    # > 10% probability mass are considered.
-    top_p: None | float = None
-
-    # OpenAI doc:
-    # > Number between -2.0 and 2.0. Positive values penalize new tokens
-    # > based on whether they appear in the text so far, increasing the
-    # > model's likelihood to talk about new topics.
-    presence_penalty: None | float = None
-
-    # OpenAI doc:
-    # > Number between -2.0 and 2.0. Positive values penalize new tokens
-    # > based on their existing frequency in the text so far, decreasing
-    # > the model's likelihood to repeat the same line verbatim.
-    frequency_penalty: None | float = None
-
-    def length(self, model: str = None):
-        model = model or self.model
-        prompt_length = count_tokens(self.prompt, self.model)
-        response_length = count_tokens(self.response, self.model)
-        return prompt_length + response_length
+from core import openai, Request, BaseChat, MAX_TOKENS, count_tokens
 
 
 class _NotNoneDict(dict):
@@ -65,49 +12,66 @@ class _NotNoneDict(dict):
         super().__setitem__(key, value)
 
 
-class Chat:
-    def __init__(
-        self,
-        name: str = "",
-        system_message: str = "",
-        reserve_tokens: int = MAX_TOKENS // 10,
-    ):
-        self.name = name or str(datetime.datetime.now())
-        self._system_message = system_message
-        self.reserve_tokens = reserve_tokens
-
-        # a complete record of conversation
-        self._history: list[_Request] = []
-
-        # a subset of self.history
-        self._context: list[_Request] = []
-
-    def __str__(self):
-        return self.name
+class Chat(BaseChat):
+    @property
+    def date_started(self) -> str:
+        return self._date_started
 
     @property
-    def history(self):
+    def system_message(self) -> str:
+        return self._system_message
+
+    @property
+    def title(self) -> str:
+        return self._title
+
+    @title.setter
+    def title(self, title: str):
+        self._title = title
+
+    @property
+    def history(self) -> list[Request]:
         return self._history
 
     @property
-    def context(self):
+    def context(self) -> list[Request]:
         return self._context
 
     def reset_context(self):
         self._context = []
 
+    def trim_context(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        max_tokens: int = MAX_TOKENS,
+        reserve_tokens: int = MAX_TOKENS // 10,
+    ):
+        # Remove the earliest prompt and reply if the context is too long
+        if not self.context:
+            return
+        prompt_tokens = count_tokens(prompt, model)
+        while self.tokens_used(model) + prompt_tokens + reserve_tokens > max_tokens:
+            self.context.pop(0)
+
     def create_completion(
         self,
+        model: str,
         prompt: str,
-        model: str = DEFAULT_MODEL,
         temperature: float = None,
         top_p: float = None,
         presence_penalty: float = None,
         frequency_penalty: float = None,
+        max_tokens: int = MAX_TOKENS,
+        reserve_tokens: int = MAX_TOKENS // 10,
     ):
-        # Remove the earliest prompt and reply if the context is too long
-        while self.tokens_used(model) + self.reserve_tokens > MAX_TOKENS:
-            self._context.pop(0)
+        self.trim_context(
+            model=model,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            reserve_tokens=reserve_tokens,
+        )
 
         messages = [{"role": "system", "content": self._system_message}]
         messages.extend(self._generate_messages())
@@ -135,43 +99,45 @@ class Chat:
             response_chunks.append(content)
             yield content
 
-        request = _Request(
+        request = Request(
             model=model,
             prompt=prompt,
             response="".join(response_chunks),
             timestamp=str(datetime.datetime.now()),
             **params,
         )
-        self._history.append(request)
-        self._context.append(request)
+        self.history.append(request)
+        self.context.append(request)
 
     def _generate_messages(self) -> list[dict]:
         # generate the `message` parameter for completion
         messages = []
-        for req in self._context:
+        for req in self.context:
             messages.append({"role": "assistant", "content": req.prompt})
             messages.append({"role": "assistant", "content": req.response})
         return messages
 
+    @property
+    def last_request(self) -> Request | None:
+        with contextlib.suppress(IndexError):
+            return self.history[-1]
+
+    @property
+    def last_response(self) -> str | None:
+        with contextlib.suppress(AttributeError):
+            return self.last_request.response
+
     def tokens_used(self, model: str) -> int:
         in_system = count_tokens(self._system_message, model)
-        in_context = sum([req.length(model) for req in self._context])
+        in_context = sum([req.length(model) for req in self.context])
         return in_system + in_context
-
-
-@functools.lru_cache(maxsize=None)
-def count_tokens(text: str, model: str):
-    """Return the number of tokens in string `s`."""
-    encoding = tiktoken.encoding_for_model(model)
-    return len(encoding.encode(text))
 
 
 def _test(args: argparse.Namespace):
     print(f"{args=}")
-    chat = Chat(
-        system_message=args.system_message,
-        reserve_tokens=args.reserve_tokens,
-    )
+    chat = Chat(system_message=args.system_message)
+    max_tokens = args.max_tokens
+    reserve_tokens = args.reserve_tokens
     kwargs = _NotNoneDict(model=args.model)
     kwargs["temperature"] = args.temperature
     kwargs["top_p"] = args.top_p
@@ -187,7 +153,12 @@ def _test(args: argparse.Namespace):
             print(">>> context has been reset")
             continue
         print(">>>")
-        for content in chat.create_completion(prompt=prompt, **kwargs):
+        for content in chat.create_completion(
+            prompt=prompt,
+            max_tokens=max_tokens,
+            reserve_tokens=reserve_tokens,
+            **kwargs,
+        ):
             print(content, end="")
         print("\n")
         print(f">>> token used: {chat.tokens_used(args.model)}/{MAX_TOKENS}")
@@ -199,6 +170,7 @@ def _test(args: argparse.Namespace):
 _argparser = argparse.ArgumentParser(prog="Chat")
 _argparser.add_argument("--model", default="gpt-3.5-turbo")
 _argparser.add_argument("--system-message", default="You're a helpful assistant.")
+_argparser.add_argument("--max-tokens", type=int, default=MAX_TOKENS)
 _argparser.add_argument("--reserve_tokens", type=int, default=MAX_TOKENS // 10)
 _argparser.add_argument("--temperature", type=float)
 _argparser.add_argument("--top-p", type=float)
