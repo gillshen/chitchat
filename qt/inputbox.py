@@ -1,5 +1,5 @@
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QFont
 from PyQt6.QtWidgets import (
     QFrame,
     QVBoxLayout,
@@ -19,6 +19,7 @@ class InputBox(QFrame):
         self.setLayout(layout)
 
         self._box = QPlainTextEdit(self)
+        self._box.setFont(QFont("Consolas", 10))
         layout.addWidget(self._box)
 
         bottom_bar = QFrame(self)

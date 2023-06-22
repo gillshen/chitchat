@@ -1,8 +1,15 @@
-from PyQt6.QtGui import QTextCursor, QTextBlockFormat
-from PyQt6.QtWidgets import QTextEdit
+import re
+import html
+
+from PyQt6.QtGui import QTextCursor, QTextBlockFormat, QTextCharFormat
+from PyQt6.QtWidgets import QTextBrowser
+import markdown
 
 
-class ChatRoom(QTextEdit):
+class ChatRoom(QTextBrowser):
+    _block_format = QTextBlockFormat()
+    _block_format.setNonBreakableLines(False)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._doc = self.document()
@@ -11,13 +18,17 @@ class ChatRoom(QTextEdit):
         self._response_start = None
 
     def show_prompt(self, prompt: str):
-        self.append(f'<div style="color: #205E80">{prompt}</div>')
+        escaped = html.escape(prompt)
+        self.append(
+            f'<div style="color: #205E80; white-space: pre-wrap">{escaped}</div>'
+        )
         self.append("")
         self.append("")
         self.ensureCursorVisible()
 
     def white_waiting(self):
         self._append(". ")
+        self._wait_signal_count += 1
         if self._wait_signal_count > 5:
             self._remove_last_line()
             self._wait_signal_count = 0
@@ -34,19 +45,21 @@ class ChatRoom(QTextEdit):
         self.ensureCursorVisible()
 
     def on_streaming_finish(self, response: str):
-        # TODO remove
-        print(response, "-" * 40, sep="\n")
-
         cur = self.textCursor()
         cur.setPosition(self._response_start)
         cur.movePosition(QTextCursor.MoveOperation.End, QTextCursor.MoveMode.KeepAnchor)
         cur.removeSelectedText()
-        cur.insertMarkdown(response)
 
-        # start a new block to prevent markdown format spilling over
-        new_block_format = QTextBlockFormat()
-        new_block_format.setNonBreakableLines(False)
-        cur.insertBlock(new_block_format)
+        # extra two spaces to make `markdown` put <br /> between lone newlines
+        md = re.sub(r"(?<=\S)\n(?=\S)", "  \n", response)
+
+        html = markdown.markdown(md, extensions=["fenced_code"])
+        cur.insertHtml(f'<div style="color: #222222;">{html}</div>')
+
+        # start a new block as a style firewall
+        char_format = QTextCharFormat()
+        cur.setCharFormat(char_format)
+        cur.insertBlock(self._block_format)
 
         # scroll to the bottom
         vbar = self.verticalScrollBar()

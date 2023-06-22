@@ -163,4 +163,5 @@ cython_debug/
 #.idea/
 
 _scratch.py
+chat_settings.json
 chat_history.*
