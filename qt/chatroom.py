@@ -6,7 +6,10 @@ from PyQt6.QtGui import QTextCursor, QTextBlockFormat, QTextCharFormat
 from PyQt6.QtWidgets import QTextBrowser, QFrame
 import markdown
 
-# from ..core import Request
+import sys
+
+sys.path.append("..")
+from core import Request
 
 
 PROMPT_STYLE = "color: #205E80; white-space: pre-wrap;"
@@ -105,7 +108,7 @@ class ChatRoom(QTextBrowser):
         self.append("")
         self.append("")
 
-    def set_from_requests(self, requests: list):
+    def set_from_requests(self, requests: list[Request]):
         """Clear self and show messages from the list of Request objects"""
         self.clear()
         for req in requests:
