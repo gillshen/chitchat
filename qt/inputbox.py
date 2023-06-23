@@ -1,14 +1,15 @@
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtGui import QAction, QFont
+from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QFrame,
     QVBoxLayout,
     QHBoxLayout,
-    QPlainTextEdit,
     QPushButton,
     QLabel,
     QSizePolicy,
 )
+
+from .shared import PromptEdit
 
 
 class InputBox(QFrame):
@@ -22,10 +23,9 @@ class InputBox(QFrame):
         layout.setContentsMargins(8, 4, 8, 8)
         self.setLayout(layout)
 
-        self._box = QPlainTextEdit(self)
-        self._box.setFont(QFont("Consolas", 10))
-        self._box.textChanged.connect(self._on_text_change)
-        layout.addWidget(self._box)
+        self._prompt_edit = PromptEdit(self)
+        self._prompt_edit.prompt_nonempty.connect(self._set_enabled)
+        layout.addWidget(self._prompt_edit)
 
         bottom_bar = QFrame(self)
         bottom_bar.setFrameShape(QFrame.Shape.NoFrame)
@@ -79,7 +79,7 @@ class InputBox(QFrame):
         self._send_action.setDisabled(True)
 
     def get_prompt(self):
-        return self._box.toPlainText().strip()
+        return self._prompt_edit.get_prompt()
 
     def send(self):
         prompt = self.get_prompt()
@@ -88,17 +88,17 @@ class InputBox(QFrame):
         self._restore_button.setEnabled(True)
 
     def restore(self):
-        self._box.setPlainText(self._last_prompt)
+        self._prompt_edit.setPlainText(self._last_prompt)
 
     def enable(self):
         self._set_enabled(True)
-        self._on_text_change()  # trigger prompt checking
+        self._prompt_edit.check_prompt()
 
     def disable(self):
         self._set_enabled(False)
 
     def clear(self):
-        self._box.clear()
+        self._prompt_edit.clear()
 
     def show_tokens_used(self, tokens_used: int, max_tokens: int):
         self._status_label.setText(f"{tokens_used}/{max_tokens}")
@@ -106,8 +106,3 @@ class InputBox(QFrame):
     def _set_enabled(self, flag: bool):
         self._send_action.setEnabled(flag)
         self._send_button.setEnabled(flag)
-
-    def _on_text_change(self):
-        prompt_valid = bool(self.get_prompt())
-        self._send_button.setEnabled(prompt_valid)
-        self._send_action.setEnabled(prompt_valid)

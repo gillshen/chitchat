@@ -7,7 +7,7 @@ class ChatNotFound(Exception):
     pass
 
 
-class _ListItem(QListWidgetItem):
+class _ChatItem(QListWidgetItem):
     # add a __hash__ method so it can serve as dict keys
 
     def __hash__(self) -> int:
@@ -39,13 +39,16 @@ class ChatsList(QListWidget):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
 
+    def _new_item(self, chat_id: int, chat_title: str):
+        item = _ChatItem()
+        item.setText(chat_title)
+        self._map[item] = chat_id
+        return item
+
     def populate(self, chats_map: dict):
         self._map.clear()
         for chat_id, chat_title in chats_map.items():
-            item = _ListItem(self)
-            item.setText(chat_title)
-            self._map[item] = chat_id
-            self.addItem(item)
+            self.addItem(self._new_item(chat_id, chat_title))
 
     def rename_chat(self, chat_id: int, new_name: str):
         for item in self._map:
@@ -54,6 +57,9 @@ class ChatsList(QListWidget):
                 return
         else:
             self.error.emit(ChatNotFound(f"{chat_id=}"))
+
+    def insert_at_top(self, chat_id: int, chat_title: str):
+        self.insertItem(0, self._new_item(chat_id, chat_title))
 
     def delete_chat(self, chat_id: int):
         for item in self._map:

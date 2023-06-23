@@ -137,10 +137,10 @@ class Manager:
                 Prompt.content,
                 Response.content
             FROM Chat
-                JOIN Request ON Chat.id = Request.chat_id
-                JOIN (SELECT request_id, content FROM Message WHERE role == 'user') AS Prompt
+                LEFT JOIN Request ON Chat.id = Request.chat_id
+                LEFT JOIN (SELECT request_id, content FROM Message WHERE role == 'user') AS Prompt
                     ON Request.id = Prompt.request_id
-                JOIN (SELECT request_id, content FROM Message WHERE role == 'assistant') AS Response
+                LEFT JOIN (SELECT request_id, content FROM Message WHERE role == 'assistant') AS Response
                     ON Request.id = Response.request_id;
             """
         return self.con.execute(sql).fetchall()

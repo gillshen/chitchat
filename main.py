@@ -3,7 +3,14 @@ import time
 
 from PyQt6.QtCore import Qt, QObject, QThread, pyqtSignal
 from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import QApplication, QMainWindow, QSplitter, QFrame, QVBoxLayout
+from PyQt6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QSplitter,
+    QFrame,
+    QVBoxLayout,
+    QPushButton,
+)
 
 from core import Request, DEFAULT_MODEL, MAX_TOKENS
 from chat import Chat
@@ -11,6 +18,7 @@ from qt.chatslist import ChatsList
 from qt.paramsctrl import ParamsControl
 from qt.chatroom import ChatRoom
 from qt.inputbox import InputBox
+from qt.newchat import NewChatDialog
 import db
 
 
@@ -22,6 +30,7 @@ class ChatManager(QObject):
     wait_finished = pyqtSignal()
     streaming = pyqtSignal(str)
     streaming_finished = pyqtSignal(str)
+    new_chat_saved = pyqtSignal(tuple)  # (chat_id, chat_title)
     error = pyqtSignal(Exception)
 
     # emit `Chat.tokens_used()`
@@ -56,8 +65,9 @@ class ChatManager(QObject):
     def add_chat(self, chat_id: int, chat: Chat):
         self._chats[chat_id] = chat
 
-    def new_chat(self, system_message=""):
-        self._active_chat = self._unsaved_chat = Chat(system_message=system_message)
+    def new_chat(self, system_message="", title=""):
+        self._active_chat = Chat(system_message=system_message, title=title)
+        self._unsaved_chat = self._active_chat
 
     def rename_chat(self, chat_id: str, title: str):
         db.rename_chat(chat_id, title)
@@ -82,19 +92,20 @@ class ChatManager(QObject):
         self._chat_thread.start()
 
     def _on_streaming_finish(self, response: str):
-        self.streaming_finished.emit(response)
-        self.tokens_used.emit(self.active_chat.tokens_used(self.model))
-
         # if the current chat is unsaved, save it
         if self.active_chat is self._unsaved_chat:
             chat_id = db.save_chat(self.active_chat)
             self._chats[chat_id] = self.active_chat
             self._unsaved_chat = None
+            self.new_chat_saved.emit((chat_id, self.active_chat.title))
         else:
             chat_id = self._get_chat_id(self.active_chat)
 
         # save the request
         db.save_request(chat_id, self.active_chat.last_request)
+
+        self.streaming_finished.emit(response)
+        self.tokens_used.emit(self.active_chat.tokens_used(self.model))
 
     def _get_chat_id(self, chat: Chat):
         for key in self._chats:
@@ -189,6 +200,12 @@ class MainWindow(QMainWindow):
         sidebar.setLayout(QVBoxLayout())
         body.addWidget(sidebar)
 
+        self.new_chat_dialog = NewChatDialog(self)
+
+        self.new_chat_button = QPushButton(self)
+        self.new_chat_button.setText("+ New Chat")
+        sidebar.layout().addWidget(self.new_chat_button)
+
         self.chats_list = ChatsList(self)
         sidebar.layout().addWidget(self.chats_list)
 
@@ -207,6 +224,9 @@ class MainWindow(QMainWindow):
 
         # signals
 
+        self.new_chat_button.clicked.connect(self.new_chat_dialog.exec)
+        self.new_chat_dialog.accepted.connect(self._new_chat)
+
         self.chats_list.chat_selected.connect(self._load_chat)
         self.chats_list.rename_requested.connect(self._rename_chat)
         self.chats_list.delete_requested.connect(self._delete_chat)
@@ -214,14 +234,14 @@ class MainWindow(QMainWindow):
         self.input_box.prompt_sent.connect(self.input_box.disable)
         self.input_box.prompt_sent.connect(self.chat_room.show_prompt)
         self.input_box.prompt_sent.connect(self.chat_manager.create_completion)
+        self.input_box.prompt_sent.connect(self.input_box.clear)
 
         self.chat_manager.waiting.connect(self.chat_room.white_waiting)
-
-        self.chat_manager.wait_finished.connect(self.input_box.clear)
         self.chat_manager.wait_finished.connect(self.chat_room.on_wait_finish)
 
         self.chat_manager.streaming.connect(self.chat_room.stream_completion)
 
+        self.chat_manager.new_chat_saved.connect(self._list_new_chat)
         self.chat_manager.streaming_finished.connect(self.chat_room.on_streaming_finish)
         self.chat_manager.streaming_finished.connect(self.input_box.enable)
         self.chat_manager.tokens_used.connect(self._show_tokens_used)
@@ -234,6 +254,7 @@ class MainWindow(QMainWindow):
         self._show_tokens_used(0)
         self.setWindowTitle("chitchat")
         self.setGeometry(400, 100, 720, 660)
+        sidebar.setMaximumWidth(250)
 
         # width ratio of `sidebar` to `mainframe`
         body.setSizes([220, 500])
@@ -251,6 +272,20 @@ class MainWindow(QMainWindow):
         _show_html_action.triggered.connect(lambda: print(self.chat_room.toHtml()))
         _show_html_action.setShortcut("Ctrl+u")
         self.addAction(_show_html_action)
+
+    def _new_chat(self):
+        title = self.new_chat_dialog.get_title()
+        system_message = self.new_chat_dialog.get_system_message()
+        prompt = self.new_chat_dialog.get_prompt()
+        self.chat_manager.new_chat(system_message=system_message, title=title)
+        self.chat_room.clear()
+        self.chat_room.show_prompt(prompt)
+        self.chat_manager.create_completion(prompt)
+        self.new_chat_dialog.clear()
+
+    def _list_new_chat(self, id_title):
+        self.chats_list.insert_at_top(*id_title)
+        self.chats_list.setCurrentItem(self.chats_list.item(0))
 
     def _rebuild_chats(self):
         """Reconstruct Chat objects from database"""
@@ -277,8 +312,11 @@ class MainWindow(QMainWindow):
                     history=[],
                 ),
             )
-            request = Request(model=model, prompt=prompt, response=response)
-            chat_data["history"].append(request)
+            # a chat may have an empty history - if the first prompt failed
+            # and the user closed the program without retrying
+            if model is not None:
+                request = Request(model=model, prompt=prompt, response=response)
+                chat_data["history"].append(request)
 
         for chat_id, chat_data in chats_map.items():
             chat = Chat.from_data(**chat_data)
@@ -300,8 +338,12 @@ class MainWindow(QMainWindow):
     def _delete_chat(self, chat_id: int):
         db.delete_chat(chat_id)
         self.chats_list.delete_chat(chat_id)
+
+        # if the deleted chat happens to be the one being displayed,
+        # clear the display - but this code smells a little TODO
         if self.chats_list.selected_chat_id == chat_id:
             self.chat_room.clear()
+            self.chats_list.setCurrentItem(None)
 
     def _show_tokens_used(self, tokens_used: str):
         self.input_box.show_tokens_used(tokens_used, self.chat_manager.max_tokens)
