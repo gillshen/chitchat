@@ -50,6 +50,7 @@ class Manager:
 
     def __init__(self):
         self.con = connect()
+        self.con.execute("PRAGMA foreign_keys = ON")
 
     def save_chat(self, chat: BaseChat) -> int:
         sql = "INSERT INTO Chat (title, system_message, date_started) VALUES (?, ?, ?);"
@@ -118,6 +119,32 @@ class Manager:
         with self.con:
             self.con.execute("DELETE FROM Chat WHERE id=?", (chat_id,))
 
+    def list_chat_titles(self) -> list:
+        """Return a list of (id, title) tuples"""
+        return self.con.execute("SELECT id, title FROM Chat").fetchall()
+
+    def list_messages_simple(self) -> list:
+        """Return a list of tuples:
+        (chat_id, title, system_message, date_started, model, prompt, response)
+        """
+        sql = """
+            SELECT 
+                Chat.id, 
+                Chat.title, 
+                Chat.system_message, 
+                Chat.date_started, 
+                Request.model, 
+                Prompt.content,
+                Response.content
+            FROM Chat
+                JOIN Request ON Chat.id = Request.chat_id
+                JOIN (SELECT request_id, content FROM Message WHERE role == 'user') AS Prompt
+                    ON Request.id = Prompt.request_id
+                JOIN (SELECT request_id, content FROM Message WHERE role == 'assistant') AS Response
+                    ON Request.id = Response.request_id;
+            """
+        return self.con.execute(sql).fetchall()
+
 
 # Convenience functions
 def save_chat(chat: BaseChat) -> int:
@@ -134,3 +161,11 @@ def rename_chat(chat_id: int, title: str):
 
 def delete_chat(chat_id: int):
     Manager().delete_chat(chat_id)
+
+
+def list_chat_titles():
+    return Manager().list_chat_titles()
+
+
+def list_messages_simple():
+    return Manager().list_messages_simple()

@@ -81,6 +81,17 @@ class BaseChat(abc.ABC):
     def __str__(self):
         return self._title
 
+    @classmethod
+    @abc.abstractmethod
+    def from_data(
+        cls,
+        system_message: str = "",
+        title: str = "",
+        date_started: str = "",
+        history: None | list[Request] = None,
+    ):
+        pass
+
     @property
     @abc.abstractmethod
     def date_started(self) -> str:

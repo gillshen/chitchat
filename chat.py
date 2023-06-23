@@ -13,6 +13,19 @@ class _NotNoneDict(dict):
 
 
 class Chat(BaseChat):
+    @classmethod
+    def from_data(
+        cls,
+        system_message: str = "",
+        title: str = "",
+        date_started: str = "",
+        history: None | list[Request] = None,
+    ):
+        chat = cls(system_message=system_message, title=title)
+        chat._date_started = date_started
+        chat._history = chat._context = history or []
+        return chat
+
     @property
     def date_started(self) -> str:
         return self._date_started
