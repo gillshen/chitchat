@@ -5,12 +5,11 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QFrame,
     QPushButton,
 )
 
-from .shared import PromptEdit
+from .shared import PromptEdit, FramelessLineEdit
 
 sys.path.append("..")
 from core import DEFAULT_TITLE
@@ -27,7 +26,7 @@ class NewChatDialog(QDialog):
 
         layout.addWidget(QLabel("Title (optional)"))
 
-        self._title_edit = QLineEdit(self)
+        self._title_edit = FramelessLineEdit(self)
         self._title_edit.setText(DEFAULT_TITLE)
         layout.addWidget(self._title_edit)
 

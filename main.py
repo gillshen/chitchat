@@ -22,6 +22,9 @@ from qt.newchat import NewChatDialog
 import db
 
 
+APP_NAME = "chitchat"
+
+
 class ChatManager(QObject):
     """Make API requests and manage data storage"""
 
@@ -201,27 +204,34 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(body)
 
         sidebar = QFrame(self)
-        sidebar.setLayout(QVBoxLayout())
+        sidebar_layout = QVBoxLayout()
+        sidebar_layout.setContentsMargins(6, 6, 0, 2)
+        sidebar.setLayout(sidebar_layout)
         body.addWidget(sidebar)
 
         self.new_chat_dialog = NewChatDialog(self)
 
         self.new_chat_button = QPushButton(self)
         self.new_chat_button.setText("+ New Chat")
-        sidebar.layout().addWidget(self.new_chat_button)
+        sidebar_layout.addWidget(self.new_chat_button)
 
         self.chats_list = ChatsList(self)
-        sidebar.layout().addWidget(self.chats_list)
+        sidebar_layout.addWidget(self.chats_list)
 
         self.params_ctrl = ParamsControl(self)
-        sidebar.layout().addWidget(self.params_ctrl)
+        sidebar_layout.addWidget(self.params_ctrl)
 
         mainframe = QSplitter(Qt.Orientation.Vertical, self)
         body.addWidget(mainframe)
 
+        chat_room_frame = QFrame(self)
+        mainframe.addWidget(chat_room_frame)
+
+        chat_room_frame.setLayout(QVBoxLayout())
+        chat_room_frame.layout().setContentsMargins(0, 6, 6, 0)
         self.chat_room = ChatRoom(self)
         self.chat_room.setReadOnly(True)
-        mainframe.addWidget(self.chat_room)
+        chat_room_frame.layout().addWidget(self.chat_room)
 
         self.input_box = InputBox(self)
         mainframe.addWidget(self.input_box)
@@ -255,8 +265,8 @@ class MainWindow(QMainWindow):
 
         # initialize
 
+        self._set_window_title()
         self._show_tokens_used(0)
-        self.setWindowTitle("chitchat")
         self.setGeometry(400, 100, 720, 660)
         sidebar.setMaximumWidth(250)
 
@@ -277,6 +287,12 @@ class MainWindow(QMainWindow):
         _show_html_action.setShortcut("Ctrl+u")
         self.addAction(_show_html_action)
 
+    def _set_window_title(self, chat_title: str = None):
+        if not chat_title:
+            self.setWindowTitle(APP_NAME)
+        else:
+            self.setWindowTitle(f"{chat_title} - {APP_NAME}")
+
     def _new_chat(self):
         title = self.new_chat_dialog.get_title()
         system_message = self.new_chat_dialog.get_system_message()
@@ -291,6 +307,7 @@ class MainWindow(QMainWindow):
         chat_id, chat_title = id_title
         self.chats_list.insert_at_top(chat_id, chat_title)
         self.chats_list.select_chat(chat_id)
+        self._set_window_title(chat_title)
 
     def _rebuild_chats(self):
         """Reconstruct Chat objects from database"""
@@ -331,15 +348,23 @@ class MainWindow(QMainWindow):
     def _load_chat(self, chat_id: int):
         self.chat_manager.set_active_chat(chat_id)
         chat = self.chat_manager.active_chat
+        # reconstruct chat history and shows it in chatroom
         self.chat_room.set_from_requests(chat.history)
         # update the token usage label
         tokens_used = chat.tokens_used(self.chat_manager.model)
         max_tokens = self.chat_manager.max_tokens
         self.input_box.show_tokens_used(tokens_used, max_tokens)
+        # update window title
+        self._set_window_title(chat.title)
 
     def _rename_chat(self, id_name: tuple):
-        db.rename_chat(*id_name)
-        self.chats_list.rename_chat(*id_name)
+        chat_id, chat_title = id_name
+        db.rename_chat(chat_id, chat_title)
+        self.chats_list.rename_chat(chat_id, chat_title)
+
+        # if the renamed chat happens to be the one being displayed:
+        if self.chats_list.selected_chat_id == chat_id:
+            self._set_window_title(chat_title)
 
     def _delete_chat(self, chat_id: int):
         db.delete_chat(chat_id)
@@ -350,8 +375,9 @@ class MainWindow(QMainWindow):
         if self.chats_list.selected_chat_id == chat_id:
             self.chat_room.clear()
             self.chats_list.select_chat(None)
+            self._set_window_title()
 
-    def _show_tokens_used(self, tokens_used: str):
+    def _show_tokens_used(self, tokens_used: int):
         self.input_box.show_tokens_used(tokens_used, self.chat_manager.max_tokens)
 
 

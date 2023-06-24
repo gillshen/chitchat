@@ -1,6 +1,15 @@
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import QListWidget, QListWidgetItem, QMenu, QInputDialog, QLineEdit
+from PyQt6.QtWidgets import (
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
+    QDialog,
+    QHBoxLayout,
+    QPushButton,
+)
+
+from .shared import FramelessLineEdit
 
 
 class ChatNotFound(Exception):
@@ -24,6 +33,8 @@ class ChatsList(QListWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setFrameStyle(QListWidget.Shape.NoFrame)
+
         self._map = {}  # QListWidgetItem -> chat_id
         self._selected_chat_id = None
         self.itemClicked.connect(self._on_left_click)
@@ -93,16 +104,15 @@ class ChatsList(QListWidget):
         self.chat_selected.emit(self.current_chat_id)
 
     def _request_rename(self):
-        current_item = self.currentItem()
-        new_name, ok = QInputDialog.getText(
-            self,
-            "Rename Chat",  # title
-            "Enter a new name",  # label text
-            QLineEdit.EchoMode.Normal,  # echo mode
-            current_item.text(),  # current text
-        )
-        if ok:
+        current_name = self.currentItem().text()
+        dialog = RenameDialog(self, current_name=current_name)
+
+        def _emit_request():
+            new_name = dialog.get_text()
             self.rename_requested.emit((self.current_chat_id, new_name))
+
+        dialog.accepted.connect(_emit_request)
+        dialog.exec()
 
     def _request_delete(self):
         self.delete_requested.emit(self.current_chat_id)
@@ -111,3 +121,30 @@ class ChatsList(QListWidget):
         item = self.itemAt(position)
         if item is not None:
             self._context_menu.exec(self.mapToGlobal(position))
+
+
+class RenameDialog(QDialog):
+    def __init__(self, parent=None, current_name=""):
+        super().__init__(parent)
+        self.setWindowTitle("Rename Chat")
+
+        layout = QHBoxLayout()
+        self.setLayout(layout)
+
+        self.edit = FramelessLineEdit(self)
+        self.edit.setText(current_name)
+        self.edit.setMinimumWidth(200)
+        layout.addWidget(self.edit)
+
+        self._okay_button = QPushButton(self)
+        self._okay_button.setText("Okay")
+        self._okay_button.clicked.connect(self.accept)
+        layout.addWidget(self._okay_button)
+
+        self._okay_action = QAction(self)
+        self._okay_action.triggered.connect(self.accept)
+        self._okay_action.setShortcut("Ctrl+Return")
+        self.addAction(self._okay_action)
+
+    def get_text(self):
+        return self.edit.text().strip()

@@ -20,7 +20,7 @@ class InputBox(QFrame):
         self._last_prompt = ""
 
         layout = QVBoxLayout()
-        layout.setContentsMargins(8, 4, 8, 8)
+        layout.setContentsMargins(0, 2, 6, 6)
         self.setLayout(layout)
 
         self._prompt_edit = PromptEdit(self)
