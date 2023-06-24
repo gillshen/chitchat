@@ -245,10 +245,10 @@ class MainWindow(QMainWindow):
         self.params_ctrl.freq_penalty_set_default.connect(self._set_frequency_penalty)
         self.params_ctrl.freq_penalty_set.connect(self._set_frequency_penalty)
 
-        self.input_box.prompt_sent.connect(self.input_box.disable)
+        self.input_box.prompt_sent.connect(self.input_box.clear)
+        self.input_box.prompt_sent.connect(self._lock_ui)
         self.input_box.prompt_sent.connect(self.chat_room.show_prompt)
         self.input_box.prompt_sent.connect(self.manager.create_completion)
-        self.input_box.prompt_sent.connect(self.input_box.clear)
 
         self.manager.waiting.connect(self.chat_room.white_waiting)
         self.manager.wait_finished.connect(self.chat_room.on_wait_finish)
@@ -257,11 +257,11 @@ class MainWindow(QMainWindow):
 
         self.manager.new_chat_saved.connect(self._list_new_chat)
         self.manager.streaming_finished.connect(self.chat_room.on_streaming_finish)
-        self.manager.streaming_finished.connect(self.input_box.enable)
+        self.manager.streaming_finished.connect(self._unlock_ui)
         self.manager.tokens_used.connect(self._show_tokens_used)
 
         self.manager.error.connect(self.chat_room.show_error)
-        self.manager.error.connect(self.input_box.enable)
+        self.manager.error.connect(self._unlock_ui)
 
         # initialize
 
@@ -376,6 +376,16 @@ class MainWindow(QMainWindow):
             self.chat_room.clear()
             self.chats_list.select_chat(None)
             self._set_window_title()
+
+    def _lock_ui(self):
+        self.input_box.disable()
+        self.chats_list.setDisabled(True)
+        self.new_chat_button.setDisabled(True)
+
+    def _unlock_ui(self):
+        self.input_box.enable()
+        self.chats_list.setEnabled(True)
+        self.new_chat_button.setEnabled(True)
 
     def _show_tokens_used(self, tokens_used: int):
         self.input_box.show_tokens_used(tokens_used, self.manager.max_tokens)

@@ -90,7 +90,7 @@ class ChatRoom(QTextBrowser):
         # two spaces needed for `markdown` to treat lone newlines as <br />
         md = re.sub(r"(?<=\S)\n(?=\S)", "  \n", response)
 
-        html = markdown.markdown(md, extensions=["fenced_code"])
+        html = markdown.markdown(md, extensions=["fenced_code", "tables"])
         cur.insertHtml(f'<span style="{COMPLETION_STYLE}">{html}</span>')
 
         # start a new block as a style firewall
