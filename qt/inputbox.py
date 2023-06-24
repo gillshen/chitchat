@@ -1,15 +1,8 @@
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import (
-    QFrame,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
-    QLabel,
-    QSizePolicy,
-)
+from PyQt6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel
 
-from .shared import PromptEdit
+from .shared import PromptEdit, FixedSizeButton
 
 
 class InputBox(QFrame):
@@ -45,7 +38,7 @@ class InputBox(QFrame):
 
         bottom_bar_layout.addStretch()
 
-        self._restore_button = QPushButton(self)
+        self._restore_button = FixedSizeButton(self)
         self._restore_button.clicked.connect(self.restore)
         self._restore_button.setText("Restore")
         self._restore_button.setToolTip("Restore the last prompt; Ctrl+R.")
@@ -56,14 +49,11 @@ class InputBox(QFrame):
         self._restore_action.setShortcut("Ctrl+R")
         self.addAction(self._restore_action)
 
-        self._send_button = QPushButton(self)
+        self._send_button = FixedSizeButton(self)
         self._send_button.clicked.connect(self.send)
         self._send_button.setText("Send")
         self._send_button.setToolTip(
             "Press Ctrl+Return to send. Press Return to start a new line."
-        )
-        self._send_button.setSizePolicy(
-            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
         )
         bottom_bar_layout.addWidget(self._send_button)
 

@@ -3,17 +3,11 @@ import time
 
 from PyQt6.QtCore import Qt, QObject, QThread, pyqtSignal
 from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import (
-    QApplication,
-    QMainWindow,
-    QSplitter,
-    QFrame,
-    QVBoxLayout,
-    QPushButton,
-)
+from PyQt6.QtWidgets import QApplication, QMainWindow, QSplitter, QFrame, QVBoxLayout
 
 from core import Request, DEFAULT_MODEL, MAX_TOKENS, DEFAULT_TITLE
 from chat import Chat
+from qt.shared import FixedSizeButton
 from qt.chatslist import ChatsList
 from qt.paramsctrl import ParamsControl
 from qt.chatroom import ChatRoom
@@ -42,7 +36,7 @@ class ChatManager(QObject):
     def __init__(self, model: str):
         super().__init__()
         self.model = model
-        self._chats = {}  # id -> Chat
+        self._chats: dict[int, Chat] = {}  # id -> Chat
         self._active_chat: Chat = None
         self._unsaved_chat: Chat = None
 
@@ -73,6 +67,7 @@ class ChatManager(QObject):
         self._unsaved_chat = self._active_chat
 
     def rename_chat(self, chat_id: str, title: str):
+        self._chats[chat_id].title = title
         db.rename_chat(chat_id, title)
 
     def delete_chat(self, chat_id):
@@ -117,19 +112,6 @@ class ChatManager(QObject):
         else:
             raise ValueError(f"Can't find {chat}")
 
-    # convenience slots
-    def set_temperature(self, value=None):
-        self.temperature = value
-
-    def set_top_p(self, value=None):
-        self.top_p = value
-
-    def set_presence_penalty(self, value=None):
-        self.presence_penalty = value
-
-    def set_frequency_penalty(self, value=None):
-        self.frequency_penalty = value
-
 
 class ChatThread(QThread):
     # passing on signals from wait threads
@@ -145,25 +127,25 @@ class ChatThread(QThread):
 
     def __init__(self, chat_manager: ChatManager, prompt: str, parent=None):
         super().__init__(parent)
-        self._cm = chat_manager
+        self._manager = chat_manager
         self._prompt = prompt
         self._is_waiting = True
         self._wait_thread = ChatWaitThread()
         self._wait_thread.waiting.connect(self.waiting.emit)
 
     def run(self):
-        chat = self._cm.active_chat
+        chat = self._manager.active_chat
         self._wait_thread.start()
         try:
             for chunk in chat.create_completion(
                 prompt=self._prompt,
-                model=self._cm.model,
-                temperature=self._cm.temperature,
-                top_p=self._cm.top_p,
-                presence_penalty=self._cm.presence_penalty,
-                frequency_penalty=self._cm.frequency_penalty,
-                max_tokens=self._cm.max_tokens,
-                reserve_tokens=self._cm.reserve_tokens,
+                model=self._manager.model,
+                temperature=self._manager.temperature,
+                top_p=self._manager.top_p,
+                presence_penalty=self._manager.presence_penalty,
+                frequency_penalty=self._manager.frequency_penalty,
+                max_tokens=self._manager.max_tokens,
+                reserve_tokens=self._manager.reserve_tokens,
             ):
                 self._stop_waiting()
                 self.streaming.emit(chunk)
@@ -206,7 +188,7 @@ class ChatWaitThread(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.chat_manager = ChatManager(model=DEFAULT_MODEL)
+        self.manager = ChatManager(model=DEFAULT_MODEL)
 
         body = QSplitter(self)
         self.setCentralWidget(body)
@@ -219,8 +201,9 @@ class MainWindow(QMainWindow):
 
         self.new_chat_dialog = NewChatDialog(self)
 
-        self.new_chat_button = QPushButton(self)
+        self.new_chat_button = FixedSizeButton(self)
         self.new_chat_button.setText("+ New Chat")
+        self.new_chat_button.setStyleSheet("padding: 6 80 6 10")
         sidebar_layout.addWidget(self.new_chat_button)
 
         self.chats_list = ChatsList(self)
@@ -253,49 +236,39 @@ class MainWindow(QMainWindow):
         self.chats_list.rename_requested.connect(self._rename_chat)
         self.chats_list.delete_requested.connect(self._delete_chat)
 
-        self.params_ctrl.temperature_set_default.connect(
-            self.chat_manager.set_temperature
-        )
-        self.params_ctrl.temperature_set.connect(self.chat_manager.set_temperature)
-        self.params_ctrl.top_p_set_default.connect(self.chat_manager.set_top_p)
-        self.params_ctrl.top_p_set.connect(self.chat_manager.set_top_p)
-        self.params_ctrl.pres_penalty_set_default.connect(
-            self.chat_manager.set_presence_penalty
-        )
-        self.params_ctrl.pres_penalty_set.connect(
-            self.chat_manager.set_presence_penalty
-        )
-        self.params_ctrl.freq_penalty_set_default.connect(
-            self.chat_manager.set_frequency_penalty
-        )
-        self.params_ctrl.freq_penalty_set.connect(
-            self.chat_manager.set_frequency_penalty
-        )
+        self.params_ctrl.temperature_set_default.connect(self._set_temperature)
+        self.params_ctrl.temperature_set.connect(self._set_temperature)
+        self.params_ctrl.top_p_set_default.connect(self._set_top_p)
+        self.params_ctrl.top_p_set.connect(self._set_top_p)
+        self.params_ctrl.pres_penalty_set_default.connect(self._set_presence_penalty)
+        self.params_ctrl.pres_penalty_set.connect(self._set_presence_penalty)
+        self.params_ctrl.freq_penalty_set_default.connect(self._set_frequency_penalty)
+        self.params_ctrl.freq_penalty_set.connect(self._set_frequency_penalty)
 
         self.input_box.prompt_sent.connect(self.input_box.disable)
         self.input_box.prompt_sent.connect(self.chat_room.show_prompt)
-        self.input_box.prompt_sent.connect(self.chat_manager.create_completion)
+        self.input_box.prompt_sent.connect(self.manager.create_completion)
         self.input_box.prompt_sent.connect(self.input_box.clear)
 
-        self.chat_manager.waiting.connect(self.chat_room.white_waiting)
-        self.chat_manager.wait_finished.connect(self.chat_room.on_wait_finish)
+        self.manager.waiting.connect(self.chat_room.white_waiting)
+        self.manager.wait_finished.connect(self.chat_room.on_wait_finish)
 
-        self.chat_manager.streaming.connect(self.chat_room.stream_completion)
+        self.manager.streaming.connect(self.chat_room.stream_completion)
 
-        self.chat_manager.new_chat_saved.connect(self._list_new_chat)
-        self.chat_manager.streaming_finished.connect(self.chat_room.on_streaming_finish)
-        self.chat_manager.streaming_finished.connect(self.input_box.enable)
-        self.chat_manager.tokens_used.connect(self._show_tokens_used)
+        self.manager.new_chat_saved.connect(self._list_new_chat)
+        self.manager.streaming_finished.connect(self.chat_room.on_streaming_finish)
+        self.manager.streaming_finished.connect(self.input_box.enable)
+        self.manager.tokens_used.connect(self._show_tokens_used)
 
-        self.chat_manager.error.connect(self.chat_room.show_error)
-        self.chat_manager.error.connect(self.input_box.enable)
+        self.manager.error.connect(self.chat_room.show_error)
+        self.manager.error.connect(self.input_box.enable)
 
         # initialize
 
         self._set_window_title()
         self._show_tokens_used(0)
         self.setGeometry(400, 100, 800, 660)
-        sidebar.setMaximumWidth(320)
+        sidebar.setFixedWidth(300)
 
         # width ratio of `sidebar` to `mainframe`
         body.setSizes([300, 500])
@@ -324,10 +297,10 @@ class MainWindow(QMainWindow):
         title = self.new_chat_dialog.get_title()
         system_message = self.new_chat_dialog.get_system_message()
         prompt = self.new_chat_dialog.get_prompt()
-        self.chat_manager.new_chat(system_message=system_message, title=title)
+        self.manager.new_chat(system_message=system_message, title=title)
         self.chat_room.clear()
         self.chat_room.show_prompt(prompt)
-        self.chat_manager.create_completion(prompt)
+        self.manager.create_completion(prompt)
         self.new_chat_dialog.clear()
 
     def _list_new_chat(self, id_title):
@@ -370,23 +343,23 @@ class MainWindow(QMainWindow):
 
         for chat_id, chat_data in chats_map.items():
             chat = Chat.from_data(**chat_data)
-            self.chat_manager.add_chat(chat_id=chat_id, chat=chat)
+            self.manager.add_chat(chat_id=chat_id, chat=chat)
 
     def _load_chat(self, chat_id: int):
-        self.chat_manager.set_active_chat(chat_id)
-        chat = self.chat_manager.active_chat
+        self.manager.set_active_chat(chat_id)
+        chat = self.manager.active_chat
         # reconstruct chat history and shows it in chatroom
         self.chat_room.set_from_requests(chat.history)
         # update the token usage label
-        tokens_used = chat.tokens_used(self.chat_manager.model)
-        max_tokens = self.chat_manager.max_tokens
+        tokens_used = chat.tokens_used(self.manager.model)
+        max_tokens = self.manager.max_tokens
         self.input_box.show_tokens_used(tokens_used, max_tokens)
         # update window title
         self._set_window_title(chat.title)
 
     def _rename_chat(self, id_name: tuple):
         chat_id, chat_title = id_name
-        db.rename_chat(chat_id, chat_title)
+        self.manager.rename_chat(chat_id, chat_title)
         self.chats_list.rename_chat(chat_id, chat_title)
 
         # if the renamed chat happens to be the one being displayed:
@@ -395,7 +368,7 @@ class MainWindow(QMainWindow):
 
     def _delete_chat(self, chat_id: int):
         db.delete_chat(chat_id)
-        self.chat_manager.delete_chat(chat_id)
+        self.manager.delete_chat(chat_id)
         self.chats_list.delete_chat(chat_id)
 
         # if the deleted chat happens to be the one being displayed:
@@ -405,7 +378,19 @@ class MainWindow(QMainWindow):
             self._set_window_title()
 
     def _show_tokens_used(self, tokens_used: int):
-        self.input_box.show_tokens_used(tokens_used, self.chat_manager.max_tokens)
+        self.input_box.show_tokens_used(tokens_used, self.manager.max_tokens)
+
+    def _set_temperature(self, value=None):
+        self.manager.temperature = value
+
+    def _set_top_p(self, value=None):
+        self.manager.top_p = value
+
+    def _set_presence_penalty(self, value=None):
+        self.manager.presence_penalty = value
+
+    def _set_frequency_penalty(self, value=None):
+        self.manager.frequency_penalty = value
 
 
 if __name__ == "__main__":

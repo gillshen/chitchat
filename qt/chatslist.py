@@ -35,7 +35,7 @@ class ChatsList(QListWidget):
         super().__init__(parent)
         self.setFrameStyle(QListWidget.Shape.NoFrame)
 
-        self._map = {}  # QListWidgetItem -> chat_id
+        self._map: dict[_ChatItem, int] = {}  # _ChatItem -> chat_id
         self._selected_chat_id = None
         self.itemClicked.connect(self._on_left_click)
 
@@ -56,14 +56,16 @@ class ChatsList(QListWidget):
         self._map[item] = chat_id
         return item
 
-    def _get_item(self, chat_id: int) -> _ChatItem:
+    def _get_item(self, chat_id: int | None) -> _ChatItem:
+        if chat_id is None:
+            return
         for item in self._map:
             if self._map[item] == chat_id:
                 return item
         else:
             self.error.emit(ChatNotFound(f"{chat_id=}"))
 
-    def populate(self, chats_map: dict):
+    def populate(self, chats_map: dict[int, str]):
         self._map.clear()
         for chat_id, chat_title in chats_map.items():
             self.addItem(self._new_item(chat_id, chat_title))
@@ -75,12 +77,8 @@ class ChatsList(QListWidget):
         self.insertItem(0, self._new_item(chat_id, chat_title))
 
     def select_chat(self, chat_id: int | None):
-        if chat_id is None:
-            self.setCurrentItem(None)
-            self._selected_chat_id = None
-        else:
-            self.setCurrentItem(self._get_item(chat_id))
-            self._selected_chat_id = chat_id
+        self.setCurrentItem(self._get_item(chat_id))
+        self._selected_chat_id = chat_id
 
     def delete_chat(self, chat_id: int):
         for item in self._map:
