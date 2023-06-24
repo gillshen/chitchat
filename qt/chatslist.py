@@ -45,21 +45,31 @@ class ChatsList(QListWidget):
         self._map[item] = chat_id
         return item
 
+    def _get_item(self, chat_id: int) -> _ChatItem:
+        for item in self._map:
+            if self._map[item] == chat_id:
+                return item
+        else:
+            self.error.emit(ChatNotFound(f"{chat_id=}"))
+
     def populate(self, chats_map: dict):
         self._map.clear()
         for chat_id, chat_title in chats_map.items():
             self.addItem(self._new_item(chat_id, chat_title))
 
     def rename_chat(self, chat_id: int, new_name: str):
-        for item in self._map:
-            if self._map[item] == chat_id:
-                item.setText(new_name)
-                return
-        else:
-            self.error.emit(ChatNotFound(f"{chat_id=}"))
+        self._get_item(chat_id).setText(new_name)
 
     def insert_at_top(self, chat_id: int, chat_title: str):
         self.insertItem(0, self._new_item(chat_id, chat_title))
+
+    def select_chat(self, chat_id: int | None):
+        if chat_id is None:
+            self.setCurrentItem(None)
+            self._selected_chat_id = None
+        else:
+            self.setCurrentItem(self._get_item(chat_id))
+            self._selected_chat_id = chat_id
 
     def delete_chat(self, chat_id: int):
         for item in self._map:

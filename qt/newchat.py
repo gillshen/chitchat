@@ -1,3 +1,4 @@
+import sys
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QDialog,
@@ -10,6 +11,9 @@ from PyQt6.QtWidgets import (
 )
 
 from .shared import PromptEdit
+
+sys.path.append("..")
+from core import DEFAULT_TITLE
 
 
 class NewChatDialog(QDialog):
@@ -24,7 +28,7 @@ class NewChatDialog(QDialog):
         layout.addWidget(QLabel("Title (optional)"))
 
         self._title_edit = QLineEdit(self)
-        self._title_edit.setText("New Chat")
+        self._title_edit.setText(DEFAULT_TITLE)
         layout.addWidget(self._title_edit)
 
         layout.addSpacing(10)

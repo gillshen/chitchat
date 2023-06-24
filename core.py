@@ -14,6 +14,7 @@ openai.api_key = chat_settings.get("key", "")
 openai.api_base = chat_settings.get("base", openai.api_base)
 DEFAULT_MODEL = chat_settings.get("default_model", "gpt-3.5-turbo")
 MAX_TOKENS = chat_settings.get("max_tokens", 4097)
+DEFAULT_TITLE = chat_settings.get("default_title", "New Chat")
 
 del _f
 

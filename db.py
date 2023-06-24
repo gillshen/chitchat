@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS Message (
 
 def connect() -> sqlite3.Connection:
     con = sqlite3.connect("chat_history.sqlite")
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA foreign_keys = ON")
     return con
 
 
@@ -50,7 +52,6 @@ class Manager:
 
     def __init__(self):
         self.con = connect()
-        self.con.execute("PRAGMA foreign_keys = ON")
 
     def save_chat(self, chat: BaseChat) -> int:
         sql = "INSERT INTO Chat (title, system_message, date_started) VALUES (?, ?, ?);"
@@ -123,19 +124,22 @@ class Manager:
         """Return a list of (id, title) tuples"""
         return self.con.execute("SELECT id, title FROM Chat").fetchall()
 
-    def list_messages_simple(self) -> list:
-        """Return a list of tuples:
-        (chat_id, title, system_message, date_started, model, prompt, response)
-        """
+    def fetch_full_history(self) -> list:
+        """Return a list with data for reconstructing all chat history"""
         sql = """
             SELECT 
-                Chat.id, 
+                Chat.id AS chat_id, 
                 Chat.title, 
                 Chat.system_message, 
                 Chat.date_started, 
                 Request.model, 
-                Prompt.content,
-                Response.content
+                Prompt.content AS prompt,
+                Response.content AS response,
+                Request.timestamp,
+                Request.temperature,
+                Request.top_p,
+                Request.presence_penalty,
+                Request.frequency_penalty
             FROM Chat
                 LEFT JOIN Request ON Chat.id = Request.chat_id
                 LEFT JOIN (SELECT request_id, content FROM Message WHERE role == 'user') AS Prompt
@@ -167,5 +171,5 @@ def list_chat_titles():
     return Manager().list_chat_titles()
 
 
-def list_messages_simple():
-    return Manager().list_messages_simple()
+def fetch_full_history():
+    return Manager().fetch_full_history()
