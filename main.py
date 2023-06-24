@@ -68,11 +68,6 @@ class ChatManager(QObject):
     def add_chat(self, chat_id: int, chat: Chat):
         self._chats[chat_id] = chat
 
-    def delete_chat(self, chat_id: int):
-        deleted = self._chats.pop(chat_id)
-        if self._active_chat is deleted:
-            self._active_chat = None
-
     def new_chat(self, system_message="", title=""):
         self._active_chat = Chat(system_message=system_message, title=title)
         self._unsaved_chat = self._active_chat
