@@ -203,7 +203,7 @@ class MainWindow(QMainWindow):
 
         self.new_chat_button = FixedSizeButton(self)
         self.new_chat_button.setText("+ New Chat")
-        self.new_chat_button.setStyleSheet("padding: 6 80 6 10")
+        self.new_chat_button.setStyleSheet("padding: 6 20 6 12")
         sidebar_layout.addWidget(self.new_chat_button)
 
         self.chats_list = ChatsList(self)

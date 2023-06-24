@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QPushButton,
+    QMessageBox,
 )
 
 from .shared import FramelessLineEdit
@@ -93,6 +94,10 @@ class ChatsList(QListWidget):
         return self._map[self.currentItem()]
 
     @property
+    def current_chat_title(self) -> str:
+        return self.currentItem().text()
+
+    @property
     def selected_chat_id(self) -> int:
         """Return the id of the chat that has been selected (left-clicked)"""
         return self._selected_chat_id
@@ -102,18 +107,21 @@ class ChatsList(QListWidget):
         self.chat_selected.emit(self.current_chat_id)
 
     def _request_rename(self):
-        current_name = self.currentItem().text()
-        dialog = RenameDialog(self, current_name=current_name)
-
-        def _emit_request():
+        dialog = RenameDialog(self, current_name=self.current_chat_title)
+        if dialog.exec():
             new_name = dialog.get_text()
             self.rename_requested.emit((self.current_chat_id, new_name))
 
-        dialog.accepted.connect(_emit_request)
-        dialog.exec()
-
     def _request_delete(self):
-        self.delete_requested.emit(self.current_chat_id)
+        dialog = QMessageBox(
+            QMessageBox.Icon.Warning,
+            "Delete Chat",
+            f"Do you wish to delete <strong>{self.current_chat_title}</strong> "
+            f"(id={self.current_chat_id})?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if dialog.exec() == QMessageBox.StandardButton.Yes:
+            self.delete_requested.emit(self.current_chat_id)
 
     def _show_context_menu(self, position):
         item = self.itemAt(position)
