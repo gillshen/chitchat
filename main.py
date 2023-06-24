@@ -117,6 +117,19 @@ class ChatManager(QObject):
         else:
             raise ValueError(f"Can't find {chat}")
 
+    # convenience slots
+    def set_temperature(self, value=None):
+        self.temperature = value
+
+    def set_top_p(self, value=None):
+        self.top_p = value
+
+    def set_presence_penalty(self, value=None):
+        self.presence_penalty = value
+
+    def set_frequency_penalty(self, value=None):
+        self.frequency_penalty = value
+
 
 class ChatThread(QThread):
     # passing on signals from wait threads
@@ -240,6 +253,25 @@ class MainWindow(QMainWindow):
         self.chats_list.rename_requested.connect(self._rename_chat)
         self.chats_list.delete_requested.connect(self._delete_chat)
 
+        self.params_ctrl.temperature_set_default.connect(
+            self.chat_manager.set_temperature
+        )
+        self.params_ctrl.temperature_set.connect(self.chat_manager.set_temperature)
+        self.params_ctrl.top_p_set_default.connect(self.chat_manager.set_top_p)
+        self.params_ctrl.top_p_set.connect(self.chat_manager.set_top_p)
+        self.params_ctrl.pres_penalty_set_default.connect(
+            self.chat_manager.set_presence_penalty
+        )
+        self.params_ctrl.pres_penalty_set.connect(
+            self.chat_manager.set_presence_penalty
+        )
+        self.params_ctrl.freq_penalty_set_default.connect(
+            self.chat_manager.set_frequency_penalty
+        )
+        self.params_ctrl.freq_penalty_set.connect(
+            self.chat_manager.set_frequency_penalty
+        )
+
         self.input_box.prompt_sent.connect(self.input_box.disable)
         self.input_box.prompt_sent.connect(self.chat_room.show_prompt)
         self.input_box.prompt_sent.connect(self.chat_manager.create_completion)
@@ -262,11 +294,11 @@ class MainWindow(QMainWindow):
 
         self._set_window_title()
         self._show_tokens_used(0)
-        self.setGeometry(400, 100, 720, 660)
-        sidebar.setMaximumWidth(250)
+        self.setGeometry(400, 100, 800, 660)
+        sidebar.setMaximumWidth(320)
 
         # width ratio of `sidebar` to `mainframe`
-        body.setSizes([220, 500])
+        body.setSizes([300, 500])
         # height ratio of chat_room to input_box
         mainframe.setSizes([400, 260])
 
